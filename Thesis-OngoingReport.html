@@ -1,0 +1,245 @@
+**Surface Subdivision on Compute Shaders - Ongoing Report**
+*Jad Khoury, under the supervision of Jonathan Dupuy, Unity Technologies*
+
+*Please note that, as the lines drawn in `GL_LINE` mode are very thin and the mp4 compression is quite lossy, I recommend watching the videos in fullscreen. The viewer called by MarkDeep should offer this possibility (on OsX it appears at the top-left of the viewer)*
+
+
+
+Introduction
+========
+
+The goal of this project is to research and implement an efficient triangle and quad tessellation scheme. Both schemes are expected to run entirely on the GPU and out-perform existing hardware implementations. In addition to learning research methodology and communication, the candidate will develop strong skills in modern GPU programming.
+
+Advanced OpenGL 4.5 functionalities
+================
+Before starting to work on the project itself, I needed to understand and learn how to implement some more ardvanced features of OpenGL that I didn't needed before, such as Transform Feedback, Uniform Blocks / Uniform Buffers, Shader Storage Buffers, Atomic Counters and more. Therefore, the first few weeks of my thesis have been dedicated to acquiring more in-depth GPU programming skills. To do so, I implemented the features one at a time, adding more and more functionnalities to my programms incrementally while keeping the previous implementation in their respective directory. At the end of this period, I had a code base of 7 small self-contained programs that would serve me during the rest of the research. This section will briefly detail these implementations. 
+
+Particles Feedback (27 sept 2017)
+-------------------------
+Implementation of a simple particle system where the particles are spawned and given a random direction thanks to a uniform buffer storing a random table. Features acquired: 
+
+* OpenGL 4.5 **Direct State Access** functions (glNamed____)
+
+* **Uniform Buffers**
+
+* **Transform Feedback**
+
+* VAO PingPong
+
+* Random Array Generator
+
+![Particles Feedback](images/videos/1-Particles_Feedback_1.mp4)
+
+Particles Feedback 2 (29 sept 2017)
+-------------------------
+Augmentation of the *Particles Feedback* program with in particular: 
+
+* **Shader Storage Buffer Object** (SSBO) instead of Uniform Block
+
+* **2 passes**: one to update the particle positions, one to render them;
+
+* Simple physic simulation (mass, initial velocity and gravity)
+
+* Ping pong buffer with multiple attribute
+
+![Particles Feedback](images/videos/2-Particles_Feedback_2.mp4)
+
+
+Particle Feedback CS (04 Oct 2017)
+-------------------------
+Augmentation of *Particles Feedback 2* with in particular: 
+
+* 2 different implementations: one with the positions in a VAO, and one with an **empty VAO and everything stored in SSBOs**
+
+* Position computed and updated in a **Compute Shader**
+
+* Keyboard input & program update to reload shaders while the program is running (very nice when debugging)
+
+* Simple GUI using the external library **Imgui** (lighter than NanoGui)
+
+![Particles Feedback CS](images/videos/3-Particles_Feedback_CS.mp4)
+
+
+
+Implementation of QuadTrees on GPU
+================
+Quadtrees, and all LTrees in general, are by definition a recursive approach to space transversal optimisation. Nevertheless, J. Dupuy presented in GPU Pro 5 an iterative implementation of quadtrees on GPU using pingpong buffer and updating the tree sequentially at each frame. To do so, we store in SSBOs a list of *keys*, each representing a leaf of the tree. Then, using some specifically designed functions, we can decode a key and deduce the transformations corresponding to the leaf inside the quadtree (i.e. translation and scaling for the Quad, and some additional rotations for the Triangle). More details can be found in the Chapter of GPU Pro 5 dedicated to this implementation. 
+
+
+Subdiv Point (10 oct 2017)
+-------------------------
+Implementation of the QuadTree on GPU in Compute Shaders using J. Dupuy's ltree.glsl shader to compute the keys and the transformations. In this demo, we see a set of points placed on a regular grid, corresponding to the quadtree leaf position. When using the GUI's slider, we modify the traget subdivision level uniformly across the quadtree. The Compute Shader then divides or merge the existing keys (one invocation per key) to match the desired subdivision level, and the render pass then decodes the list of the keys and use the obtained transformation as the points position. Everything shown is in unit space (from `(0,0)` to `(1,1)`)
+
+* The number of keys stored is kept in an **Atomic Counter**
+
+* The implementation is purely done in SSBOs (the VAOs are empty)
+
+![Subdiv Points](images/videos/4-Subdiv_Points.mp4)
+
+*Please note that the video compression makes some of the points flickers and disappear, while this is not present when running the program itself*
+
+Subdiv Quads (11 Oct 2017)
+-------------------------
+This program is an augmentation of *Subdiv Point* with: 
+
+* A 2 triangle mesh of a quad instead of points
+
+* Implementation of a "modern" VAO for multiple attributes for the quad mesh (Direct State Access)
+
+* Use of `glDrawElementsInstanced` to draw instances of indexed triangles. The number of quads is not read back from the QuadTree SSBO yet, but computed from the target subdivision level
+
+* W toggles the GL Wireframe mode (GL_LINES)
+
+![Subdiv Quads](images/videos/5-Subdiv_Quads.mp4)
+
+
+ Subdiv Quads 2 (12 oct 2017)
+-------------------------
+This program is an augmentation of *Subdiv Quads*, but required a complete re-write of the `ltree.glsl` shader to suit a new way of storing the key. Instead of having 4 bits at the end of the 32bits bitstring reserved to store the subdivision level of a given leaf, we now have a 1 stored in front of the key itself, which serve as most significant bit to recover the level of the leaf. This is when the project became more challenging, as I had to re-implement completely every function that manipulate the keys. The most complicated part definitely was the transformation recovery from a key. To do so, we read the bitstring 2 bits by 2 bits, and accumulate both scaling and translation until we arrive at the end of the key, where we return the computed transformations as a `mat3` (to be applied to homogeneous 2D points). 
+
+* Implemented own ltree for quads
+
+* More robust implementation on Compute Shader
+
+* 2D transfo for the scale and translat of the quads stored in mat3
+
+* Throw error and stop program if shaders don't compile at init
+
+![Subdiv Quads 2](images/videos/6-Subdiv_Quads_2.mp4)
+
+ Subdiv Triangles (13 oct 2017)
+-------------------------
+The original implementation of the Quadtree only handed quads. Triangles require more work since they also need rotation to fit inside the original "root" triangle. The transformation implementation still return a mat3. Also note the Color of the triangle in function of the LoD.
+
+![Subdiv Triangles](images/videos/7-Subdiv_Triangles.mp4)
+
+*Once again the video compression is suboptimal and makes some of the lines almost disappear*
+
+Adaptive LoD: Distance Based
+================
+Unitil now, every subdivision presented used an uniform level across the geometry, allowing to explicitely define the target level and subdividing until that level is matched. Nevertheless, the goal of tessellation is to get a variable level of subdivision across the geometry. Usually, we aim at a fixed number of primitives (Triangles, Quads) per screen pixel. A good approximation of this ratio is to compute the LoD for a given primitive in function of the distance to the camera. To test this approach, I first implemented a simple 2D case where the position of the camera is simulated by a white point that can be displaced accross the 2D scene using the keyboard arrows. Then I tested this approach in 2 different real-world application: procedural terrain from grids, and 3D mesh rendering. 
+
+ Subdiv RealTime 1 (27 oct 2017)
+-------------------------
+This is an augmentation of the *Subdiv Triangles* where 
+
+* The instanced are now drawn in indirect mode. The Compute Shader (Compute Pass) is in charge, for each leaf key, to estimate the distance-based LoD corresponding to its position w.r.t. the position of the "camera" (simulated by the white point). In function of this LoD, it either merges 4 children into a parent, divide a leaf into 4 children, or simply copy the existing key. 
+
+* At each key write in the SSBO, the Compute Shader **atomically increments** the number of instance to draw (corresponding to the number of Quadtree leaves) directly in buffers dedicated to store the **Indirect Draw Command**. The `commands buffers` are managed separately in a `Commands` class, as their pingpong mechanism is slightly different (need to reset the counters to 0 each `n` frames ...)
+
+* GUI augmented to allow switching between unform and adaptive LoD
+
+* Function to reinitialize the Quadtree (i.e. rebuild it from scratch in function of the position of the "camera")
+
+* Switch from triangle to quad mode
+
+* To avoid T-Junction in the mesh (and therefore possible cracks in the rendering), a morph function is necessary for a smooth transition between two LoDs. For Quads, the morphing implemented is the one presented in XXXXXXXXX paper. (CDLOD). As triangles are also rotated, this morphing needed modifications, and I therefore augmented it to become symetrical wrt the axis of the subdivision pattern. 
+
+* Use of more advanced Imgui features to show some real-time benchmark.
+
+![](images/videos/8.1_Subdiv_RealTime_1_T_noMorph.mp4)
+
+*Distance Based LoD without T-Junction removal (i.e. morphing) on Triangles*
+
+![](images/videos/8.2_Subdiv_RealTime_1_Q_noMorph.mp4)
+
+*Distance Based LoD without T-Junction removal on Quads*
+
+![](images/videos/8.3_Subdiv_RealTime_1_Q_morph_demo.mp4)
+
+*Quad Morphing Demo: implementation from CDLOD*
+
+![](images/videos/8.4_Subdiv_RealTime_1_T_morph_demo.mp4)
+
+*Triangle Morphing Demo: My improvement of CDLOD*
+
+![](images/videos/8.5_Subdiv_RealTime_1_Q_morph.mp4)
+
+*Distance Based LoD with T-Junction removal on Quads*
+
+![](images/videos/8.6_Subdiv_RealTime_1_T_morph.mp4)
+
+*Distance Based LoD with T-Junction removal on Triangles*
+
+ Subdiv RealTime 2 (06 nov 2017)
+-------------------------
+This program is an augmentation of *Subdiv Realtime 1*. 
+
+* Until now, all the subdivision were made on a single primitive explicitely defined in the quadtree program. But the subdivision should work on any given 3D mesh. To suits this need, I implemented a **Mesh class** serving as interface between the "user" and the subdivision program. This class is in charge of loading the mesh, either from a obj file (for now), or generating it procedurally (for exemple: a grid). It then gives the the quadtree programm the list of vertices, quad indices and / or triangle indices, and the quadtree programm takes care of everything else. On the captured demo, the mesh is a simple 2 triangle quad, but the concept still applies: in addition to subdividing a given primitive, the programm maps the primitive to its worldspace position (mapping to its position on the mesh, then transforming using the model matrix). To verify that the mapping doesn't just work because of the unit space properties, I added some optionnal shear to the uploaded grid to test if the algorithm was robust to **non-identity model matrix**, and it was. 
+
+* Since in the new implementation of the quadtree leaf key, each subdivision takes 2 bits, and that the MSB representing the leaf subdivision level takes 2 bits also, the total number of subdivision that allow the `int` format is 15 (`2 + 15 * 2 = 32 bits`). To overcome this limitation, I reimplemented every ltree function to be able to support a **`uvec2` key format**. As glsl doesn't offer the `long int` type, `uvec2` used properly can emulate a 64 bits integer by considering the two coordinates as concatenated. Some special operations have been reimplemented, in  particular left/right shift, findMSB, etc ... But the algorithm didn't change much. This now allows 31 subdivision levels (`2 + 31 * 2 = 64 bits`)
+
+* Some modifications have been added to leave some space for the GUI
+
+* In the LTree functions responsible for computing the transformation needed to map a leaf primitive to its place in the root primitive (*e.g.* map the unit triangle in the subdivied mesh triangle), rotation computations needed `cos` and `sin` evaluation (in glsl). But these operations are expensive and not very relevant when all angles are always a multiple of *pi/4*, so I implemented a mul / add workaround to avoid these computations. 
+
+![](images/videos/9.1_Subdiv_RealTime_2_Uni.mp4)
+
+*Uniform Subdivision on a 2 triangles grid*
+
+![](images/videos/9.2_Subdiv_RealTime_2.mp4)
+
+*Adaptive Scalable Quad Subdivision on a 1 quad grid*
+
+![](images/videos/9.3_Subdiv_RealTime_2_Shear.mp4)
+
+*Demo of the shear model matrix on a 2 triangle grid*
+
+![](images/videos/9.4_Subdiv_RealTime_2_Build.mp4)
+
+*Slow motion of the quadtree build for a 1 quad grid*
+
+
+Subdiv Terrain (09 nov 2017)
+-------------------------
+* **Simulated camera** with a projection matrix, everything ported to 3D worldspace
+
+* Render to square **frambuffer** (`viewer` class)
+
+* Grid size can be adjusted in the code
+
+* Height displacement function from J.Dupuy
+
+* Addition of a **Cull Pass**: for each quadtree leaf, I create a bounding box of the primitive corresponding to the treated leaf, map it to its world space coordinates, and use a function from J.Dupuy's framework to test it agains the VP matrix and deduce if it should be culled or not. Nevertheless, this cull also required to adapt the pingpog approach of the buffers, since the culled primitives should still be accessible in the next Compute Pass. For example, if a triangle was not visible in a frame `f` and therefore culled, but is supposed to be visible at frame `f+1`, then the quadtree should stil be able to access it and eventually merge / divide it. For this reason, the  pingpong implementation in the `Command class` has been modified to suit these constraints. 
+
+* To verify the validity of the Cull Pass visually, a `freeze` button has been implemented in the GUI, that makes the Quadtree program bypass the Compute and Cull pass, and as a result freezes the quadtree. 
+
+![](images/videos/10.1_Subdiv_Terrain.mp4)
+
+*Demo of the distance-based subdivision on a 3D terrain (height of the camera not taken into account*
+
+![](images/videos/10.2_Subdiv_Terrain_freezecull.mp4)
+
+*Demo of the Cull Pass and the Freeze button*
+
+Subdiv Mesh (17 nov 2017)
+-------------------------
+As before, this is an augmentation of the *Subdiv Terrain* program. 
+
+* The whole code has been passed in 3D coordinates. 
+
+* The reset of the Command Buffer value used as atomic counter and as intsance count is now done locally on GPU (`glCopyNamedBufferSubData`) for performance reasons
+
+* Additionnal preprocessing step: The indices from the mesh triangles are reordered s.t. p[0] faces the longest edge (optimizes area balance in the created children when subdividing)
+
+* Load of a real world **`.obj` mesh**, and enough buffer reloading functions have been implemented to allow the user to switch between mesh and terrain on the fly.
+
+* Lots of refractoring
+
+* New color mode implemented: Primitive Highlight, showing the primitives handled by the quadtree, and the primitive uploaded from the CPU (*i.e.* each leaf primitive can be a single triangle, or a triangle that already has `n` subdivision, with vertices and indices precomputed and stored in a VAO, therefore incrementing the final LoD by `n`).
+
+![](images/videos/11.1_Subdiv_Mesh_Terrain.mp4)
+
+*Demo of the Terrain rendering, on a bigger grid, with LoD colors*
+
+![](images/videos/11.2_Subdiv_Mesh_CPULoD.mp4)
+
+*Demo of the CPU LoD. In Red: the quadtree primitives. In grey, the subdivision done on CPU in preprocess*
+
+![LOOOOL](images/videos/11.3_Subdiv_Mesh_Mesh.mp4)
+
+*Demo of Distance-Based adaptive subdivison on a 3D mesh*
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js?"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
