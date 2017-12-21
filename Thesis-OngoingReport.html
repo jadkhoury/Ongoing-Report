@@ -133,7 +133,7 @@ This is an augmentation of the *Subdiv Triangles* where
 
 * Switch from triangle to quad mode
 
-* To avoid T-Junction in the mesh (and therefore possible cracks in the rendering), a morph function is necessary for a smooth transition between two LoDs. For Quads, the morphing implemented is the one presented in XXXXXXXXX paper. (CDLOD). As triangles are also rotated, this morphing needed modifications, and I therefore augmented it to become symetrical wrt the axis of the subdivision pattern. 
+* To avoid T-Junction in the mesh (and therefore possible cracks in the rendering), a morph function is necessary for a smooth transition between two LoDs. For Quads, the morphing implemented is the one presented in [Strugar, F., 2009. Continuous distance-dependent level of detail for rendering heightmaps. Journal of graphics, GPU, and game tools, 14(4), pp.57-74. paper]. As triangles are also rotated, this morphing needed modifications, and I therefore augmented it to become symetrical wrt the axis of the subdivision pattern. 
 
 * Use of more advanced Imgui features to show some real-time benchmark.
 
@@ -236,10 +236,37 @@ As before, this is an augmentation of the *Subdiv Terrain* program.
 
 *Demo of the CPU LoD. In Red: the quadtree primitives. In grey, the subdivision done on CPU in preprocess*
 
-![LOOOOL](images/videos/11.3_Subdiv_Mesh_Mesh.mp4)
+![](images/videos/11.3_Subdiv_Mesh_Mesh.mp4)
 
 *Demo of Distance-Based adaptive subdivison on a 3D mesh*
 
 
+Limitations of the Distance Based Approach
+==========
+As previoulsy mentioned, one of the leading approach to tessellation is aiming at a constant number of primitives per rendered pixel. This goal is intuitively compatible with a LoD computed in function of the distance, as the projection matrix will, if a perspective is used as in most case, make far primitive small, and close primitive large. Nevertheless, this assumption infer a very strong contraint on the low poly mesh rendered (i.e. the 3D mesh before it gets tessellated), as the primitive should have relatively the same size. For this reason, the distance based approach works very well on regular grid that later gets displaced (e.g. terrain rendering), but can become very unsatisfactory when used on artist-designed meshes. 
 
-<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js?"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
+To serve as demonstration, we use a polygonal mesh encoded once with regular primitive, and once with non regular primitives. 
+
+ ![Figure [reg]: Regular mesh](images/DB_reg_uni_0.bmp)
+ ![Figure [warp]: Regular mesh](images/DB_warp_uni_0.bmp)
+
+ ![Figure [reg_nomorph]: Regular mesh, subdivided, no morph](images/DB_reg_LoD_NoMorph.bmp)
+ ![Figure [warp_nomorph]: Regular mesh, subdivided, no morph](images/DB_warp_LoD_NoMorph.bmp)
+ 
+ ![Figure [reg_morph]: Regular mesh, subdivided, with morph](images/DB_reg_LoD_Morph.bmp)
+ ![Figure [reg_morph]: Regular mesh, subdivided, with morph](images/DB_warp_LoD_Morph.bmp)
+
+
+
+<!--- 
+  Markdeep & image comparison library - probably no need to change anything below
+-->
+<style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="resources/markdeep.min.js"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<script src="resources/jquery.event.move.js"></script>
+<script src="resources/jquery.twentytwenty.js"></script>
+<link href="resources/offcanvas.css" rel="stylesheet">
+<link href="resources/twentytwenty.css" rel="stylesheet" type="text/css" />
+<script>
+$(window).load(function(){$(".twentytwenty-container").twentytwenty({default_offset_pct: 0.5});});
+</script>
