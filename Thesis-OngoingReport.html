@@ -12,7 +12,7 @@ The goal of this project is to research and implement an efficient triangle and 
 
 Advanced OpenGL 4.5 functionalities
 ================
-Before starting to work on the project itself, I needed to understand and learn how to implement some more ardvanced features of OpenGL that I didn't needed before, such as Transform Feedback, Uniform Blocks / Uniform Buffers, Shader Storage Buffers, Atomic Counters and more. Therefore, the first few weeks of my thesis have been dedicated to acquiring more in-depth GPU programming skills. To do so, I implemented the features one at a time, adding more and more functionnalities to my programms incrementally while keeping the previous implementation in their respective directory. At the end of this period, I had a code base of 7 small self-contained programs that would serve me during the rest of the research. This section will briefly detail these implementations. 
+Before starting to work on the project itself, I needed to understand and learn how to implement some more ardvanced features of OpenGL that I didn't needed before, such as Transform Feedback, Uniform Blocks / Uniform Buffers, Shader Storage Buffers, Atomic Counters and more. Therefore, the first few weeks of my thesis have been dedicated to acquiring more in-depth GPU programming skills. At the end of this period, I had a code base of 7 small self-contained programs that would serve me during the rest of the research. This section will briefly detail these implementations. 
 
 Particles Feedback (27 sept 2017)
 -------------------------
@@ -36,7 +36,7 @@ Augmentation of the *Particles Feedback* program with in particular:
 
 * **Shader Storage Buffer Object** (SSBO) instead of Uniform Block
 
-* **2 passes**: one to update the particle positions, one to render them;
+* **2 passes**: one to update the particle positions, one to render them
 
 * Simple physic simulation (mass, initial velocity and gravity)
 
@@ -63,7 +63,11 @@ Augmentation of *Particles Feedback 2* with in particular:
 
 Implementation of QuadTrees on GPU
 ================
-Quadtrees, and all LTrees in general, are by definition a recursive approach to space transversal optimisation. Nevertheless, J. Dupuy presented in GPU Pro 5 an iterative implementation of quadtrees on GPU using pingpong buffer and updating the tree sequentially at each frame. To do so, we store in SSBOs a list of *keys*, each representing a leaf of the tree. Then, using some specifically designed functions, we can decode a key and deduce the transformations corresponding to the leaf inside the quadtree (i.e. translation and scaling for the Quad, and some additional rotations for the Triangle). More details can be found in the Chapter of GPU Pro 5 dedicated to this implementation. 
+Quadtrees, and all LTrees in general, are by definition a recursive approach to space transversal optimisation. Nevertheless, J. Dupuy presented in GPU Pro 5 an iterative implementation of quadtrees on GPU using pingpong buffer and updating the tree sequentially at each frame. To do so, we store the quadtree as a list of *keys*, each representing a leaf of the tree. The keys are designed such that we can recover the whole quadtree branch from the root to the leaf. Fig. [keys] gives a basic example: the first root triangle has been divided once, giving four children (or leaves): 0,1,2,3. Now if the trangle 3 gets divided once again, it creates 4 children, their keys being their parent's key appended with their position relative to their parent, giving 30, 31, 32, 33. As the quadtree only stores leaves, the node 3 gets deleted and we add the four new children to the quadtree. The opposite opperation is also possible, i.e. the subdivision of the node 3 can be rolled back by merging the four children leaves. With this approach, one can then decode a key as a pile of branchings and deduce the transformations corresponding to the leaf inside the quadtree (i.e. translation and scaling for the Quad, and some additional rotations for the Triangle). This encoding and decoding is for now handled by the `ltree.glsl` shader written by J. Dupuy.
+
+![Figure [keys]: Quadtree key encoding](images/subdiv_keys_with_qt.svg width="500px")
+
+ More details can be found in the Chapter of GPU Pro 5 dedicated to this implementation. 
 
 
 Subdiv Point (10 oct 2017)
@@ -95,7 +99,7 @@ This program is an augmentation of *Subdiv Point* with:
 
  Subdiv Quads 2 (12 oct 2017)
 -------------------------
-This program is an augmentation of *Subdiv Quads*, but required a complete re-write of the `ltree.glsl` shader to suit a new way of storing the key. Instead of having 4 bits at the end of the 32bits bitstring reserved to store the subdivision level of a given leaf, we now have a 1 stored in front of the key itself, which serve as most significant bit to recover the level of the leaf. This is when the project became more challenging, as I had to re-implement completely every function that manipulate the keys. The most complicated part definitely was the transformation recovery from a key. To do so, we read the bitstring 2 bits by 2 bits, and accumulate both scaling and translation until we arrive at the end of the key, where we return the computed transformations as a `mat3` (to be applied to homogeneous 2D points). 
+This program is an augmentation of *Subdiv Quads*, but required a **complete re-write of the `ltree.glsl` shader** to suit a new way of storing the key. Instead of having 4 bits at the end of the 32bits bitstring reserved to store the subdivision level of a given leaf, we now have a 1 stored in front of the key itself, which serve as most significant bit to recover the level of the leaf. This is when the project became more challenging, as I had to re-implement completely every function that manipulate the keys. The most complicated part definitely was the transformation recovery from a key. To do so, we read the bitstring 2 bits by 2 bits, from root to leaf (i.e. from left to right), and accumulate both scaling and translation until we arrive at the end of the key, where we return the computed transformations as a `mat3` (to be applied to homogeneous 2D points). 
 
 * Implemented own ltree for quads
 
@@ -133,7 +137,7 @@ This is an augmentation of the *Subdiv Triangles* where
 
 * Switch from triangle to quad mode
 
-* To avoid T-Junction in the mesh (and therefore possible cracks in the rendering), a morph function is necessary for a smooth transition between two LoDs. For Quads, the morphing implemented is the one presented in [Strugar, F., 2009. Continuous distance-dependent level of detail for rendering heightmaps. Journal of graphics, GPU, and game tools, 14(4), pp.57-74. paper]. As triangles are also rotated, this morphing needed modifications, and I therefore augmented it to become symetrical wrt the axis of the subdivision pattern. 
+* To avoid T-Junction in the mesh (and therefore possible cracks in the rendering), a morph function is necessary for a smooth transition between two LoDs. For Quads, the morphing implemented is the one presented in [Strugar, F., 2009. Continuous distance-dependent level of detail for rendering heightmaps. Journal of graphics, GPU, and game tools, 14(4), pp.57-74. paper]. As triangles are also rotated, this morphing needed modifications, and I therefore modified it to become symetrical wrt the axis of the subdivision pattern. 
 
 * Use of more advanced Imgui features to show some real-time benchmark.
 
@@ -242,19 +246,19 @@ As before, this is an augmentation of the *Subdiv Terrain* program.
 
 
 Limitations of the Distance Based Approach
-==========
+-------------------------
 As previoulsy mentioned, one of the leading approach to tessellation is aiming at a constant number of primitives per rendered pixel. This goal is intuitively compatible with a LoD computed in function of the distance, as the projection matrix will, if a perspective is used as in most case, make far primitive small, and close primitive large. Nevertheless, this assumption infer a very strong contraint on the low poly mesh rendered (i.e. the 3D mesh before it gets tessellated), as the primitive should have relatively the same size. For this reason, the distance based approach works very well on regular grid that later gets displaced (e.g. terrain rendering), but can become very unsatisfactory when used on artist-designed meshes. 
 
 To serve as demonstration, we use a polygonal mesh encoded once with regular primitive, and once with non regular primitives. 
 
  ![Figure [reg]: Regular mesh](images/DB_reg_uni_0.bmp)
- ![Figure [warp]: Regular mesh](images/DB_warp_uni_0.bmp)
+ ![Figure [warp]: Warp mesh](images/DB_warp_uni_0.bmp)
 
  ![Figure [reg_nomorph]: Regular mesh, subdivided, no morph](images/DB_reg_LoD_NoMorph.bmp)
- ![Figure [warp_nomorph]: Regular mesh, subdivided, no morph](images/DB_warp_LoD_NoMorph.bmp)
+ ![Figure [warp_nomorph]: Warp mesh, subdivided, no morph](images/DB_warp_LoD_NoMorph.bmp)
  
  ![Figure [reg_morph]: Regular mesh, subdivided, with morph](images/DB_reg_LoD_Morph.bmp)
- ![Figure [reg_morph]: Regular mesh, subdivided, with morph](images/DB_warp_LoD_Morph.bmp)
+ ![Figure [reg_morph]: Warp mesh, subdivided, with morph](images/DB_warp_LoD_Morph.bmp)
 
 
 
